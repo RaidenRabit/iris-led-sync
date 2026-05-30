@@ -161,15 +161,34 @@
                     android:visibility="gone" />
             </LinearLayout>
 
-            <TextView
-                android:id="@+id/tv_rename_hint"
+            <LinearLayout
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:layout_marginTop="8dp"
-                android:text="Long-press zone name to rename"
-                android:textAppearance="@style/TextAppearance.MaterialComponents.Caption"
-                android:textColor="?attr/colorOnSurface"
-                android:alpha="0.45" />
+                android:orientation="horizontal"
+                android:gravity="center_vertical">
+
+                <TextView
+                    android:id="@+id/tv_rename_hint"
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:text="Long-press zone name to rename"
+                    android:textAppearance="@style/TextAppearance.MaterialComponents.Caption"
+                    android:textColor="?attr/colorOnSurface"
+                    android:alpha="0.45" />
+
+                <com.google.android.material.button.MaterialButton
+                    android:id="@+id/btn_reset"
+                    style="@style/Widget.MaterialComponents.Button.TextButton"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="Reset"
+                    android:textSize="12sp"
+                    android:minWidth="0dp"
+                    android:paddingHorizontal="8dp" />
+
+            </LinearLayout>
 
         </LinearLayout>
     </LinearLayout>

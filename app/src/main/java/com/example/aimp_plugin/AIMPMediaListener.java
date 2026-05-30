@@ -18,8 +18,8 @@ import android.util.Log;
 
 import androidx.palette.graphics.Palette;
 
+import java.util.Arrays;
 import java.util.EnumMap;
-import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -56,7 +56,11 @@ public class AIMPMediaListener extends NotificationListenerService {
     private String lastTitle = null;
     private boolean artRetryScheduled = false;
 
-    public void attachLedService(CarLedService svc) { ledService = svc; }
+    public void attachLedService(CarLedService svc) {
+        ledService = svc;
+        // Apply colors for the currently playing track immediately
+        if (currentController != null) processMetadata(currentController.getMetadata());
+    }
 
     // -------------------------------------------------------------------------
     // Lifecycle
@@ -226,7 +230,11 @@ public class AIMPMediaListener extends NotificationListenerService {
         final Bitmap finalArt = art;
         Palette.from(finalArt).maximumColorCount(24).generate(palette -> {
             if (palette == null) { Log.w(TAG, "Palette returned null"); return; }
-            if (ledService == null)  { Log.w(TAG, "ledService is null"); return; }
+            if (ledService == null) {
+                Log.w(TAG, "ledService is null — starting it");
+                ensureLedServiceRunning(); // attachLedService() will reprocess this track
+                return;
+            }
 
             Map<ColorMode, Integer> colors = computeAllModes(palette, finalArt);
             Log.i(TAG, "Album colors: vibrant=#"
@@ -253,8 +261,10 @@ public class AIMPMediaListener extends NotificationListenerService {
         out.put(ColorMode.LIGHT_VIBRANT, lightVibrant != 0 ? lightVibrant : vibrant);
         out.put(ColorMode.DARK_VIBRANT,  darkVibrant  != 0 ? darkVibrant  : vibrant);
         out.put(ColorMode.MUTED,         muted        != 0 ? muted        : dominant);
-        out.put(ColorMode.PIXEL_AVERAGE, pixelAverage(art));
-        out.put(ColorMode.PIXEL_COUNT,   pixelDominant(art));
+        out.put(ColorMode.PIXEL_AVERAGE,  pixelAverage(art));
+        out.put(ColorMode.PIXEL_COUNT,    pixelMedian(art));
+        out.put(ColorMode.PIXEL_DOMINANT, pixelDominant(art));
+        out.put(ColorMode.PIXEL_MEDIAN,   pixelChannelMedian(art));
 
         return out;
     }
@@ -272,14 +282,81 @@ public class AIMPMediaListener extends NotificationListenerService {
         return color;
     }
 
+    /**
+     * Saturation-weighted mean in HSV space.
+     *
+     * Weighting by saturation means washed-out near-gray pixels (low S) barely
+     * contribute, so the result tracks the genuinely coloured mid-tones rather
+     * than the achromatic background wash.  Hue is averaged circularly (sin/cos)
+     * to handle images whose hue wraps across the 0°/360° boundary.
+     *
+     * Falls back to pixelAverage() when the image is entirely achromatic
+     * (e.g. a black-and-white photo).
+     */
+    private static int pixelMedian(Bitmap art) {
+        Bitmap small = Bitmap.createScaledBitmap(art, 24, 24, true);
+        float[] hsv = new float[3];
+        double wSinH = 0, wCosH = 0;
+        float wS = 0, wV = 0, total = 0;
+
+        for (int x = 0; x < 24; x++) {
+            for (int y = 0; y < 24; y++) {
+                int px = small.getPixel(x, y);
+                if (Math.max(Math.max(Color.red(px), Color.green(px)), Color.blue(px)) < 64)
+                    continue;
+                Color.colorToHSV(px, hsv);
+                float w = hsv[1]; // weight = saturation; near-gray → near-zero weight
+                if (w < 0.08f) continue;
+                double rad = Math.toRadians(hsv[0]);
+                wSinH += Math.sin(rad) * w;
+                wCosH += Math.cos(rad) * w;
+                wS    += hsv[1] * w;
+                wV    += hsv[2] * w;
+                total += w;
+            }
+        }
+        small.recycle();
+
+        if (total == 0) return pixelAverage(art); // achromatic image — fall back to avg
+        float hue = (float) Math.toDegrees(Math.atan2(wSinH, wCosH));
+        if (hue < 0) hue += 360;
+        hsv[0] = hue;
+        hsv[1] = wS / total;
+        hsv[2] = wV / total;
+        return Color.HSVToColor(hsv);
+    }
+
+    private static int pixelChannelMedian(Bitmap art) {
+        Bitmap small = Bitmap.createScaledBitmap(art, 24, 24, true);
+        int n = 24 * 24;
+        int[] rs = new int[n], gs = new int[n], bs = new int[n];
+        int count = 0;
+        for (int x = 0; x < 24; x++) {
+            for (int y = 0; y < 24; y++) {
+                int px = small.getPixel(x, y);
+                if (Math.max(Math.max(Color.red(px), Color.green(px)), Color.blue(px)) < 64)
+                    continue;
+                rs[count] = Color.red(px);
+                gs[count] = Color.green(px);
+                bs[count] = Color.blue(px);
+                count++;
+            }
+        }
+        small.recycle();
+        if (count == 0) return Color.WHITE;
+        Arrays.sort(rs, 0, count);
+        Arrays.sort(gs, 0, count);
+        Arrays.sort(bs, 0, count);
+        return Color.rgb(rs[count / 2], gs[count / 2], bs[count / 2]);
+    }
+
     private static int pixelDominant(Bitmap art) {
         Bitmap small = Bitmap.createScaledBitmap(art, 24, 24, true);
-        HashMap<Integer, Integer> counts = new HashMap<>();
+        java.util.HashMap<Integer, Integer> counts = new java.util.HashMap<>();
         int best = 0, bestCount = 0;
         for (int x = 0; x < 24; x++) {
             for (int y = 0; y < 24; y++) {
                 int px = small.getPixel(x, y);
-                // Skip near-black pixels — they'd turn the LEDs off
                 if (Math.max(Math.max(Color.red(px), Color.green(px)), Color.blue(px)) < 40)
                     continue;
                 int key = Color.rgb((Color.red(px) >> 4) << 4,
@@ -291,7 +368,6 @@ public class AIMPMediaListener extends NotificationListenerService {
             }
         }
         small.recycle();
-        // If all pixels were too dark, fall back to white rather than black
         return bestCount > 0 ? best : Color.WHITE;
     }
 }

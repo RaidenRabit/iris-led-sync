@@ -8,7 +8,9 @@ public enum ColorMode {
     DARK_VIBRANT   ("Dark",      "Deep saturated variant — dramatic look"),
     MUTED          ("Muted",     "Desaturated — gentle ambient light"),
     PIXEL_AVERAGE  ("Average",   "Arithmetic mean of every pixel — smooth blend"),
-    PIXEL_COUNT    ("Most Common","Literal most-frequent colour after quantisation");
+    PIXEL_COUNT    ("Tonal",      "Saturation-weighted hue mean — tracks the image's colour character"),
+    PIXEL_DOMINANT ("Most Common","Literal most-frequent colour after quantisation"),
+    PIXEL_MEDIAN   ("Median",     "Per-channel median across non-dark pixels");
 
     public final String label;
     public final String description;

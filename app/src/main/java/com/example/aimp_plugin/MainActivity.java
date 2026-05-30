@@ -27,6 +27,9 @@ import androidx.annotation.NonNull;
 import androidx.appcompat.app.AlertDialog;
 import androidx.appcompat.app.AppCompatActivity;
 import androidx.core.app.ActivityCompat;
+import androidx.core.view.ViewCompat;
+import androidx.core.view.WindowInsetsCompat;
+import androidx.core.widget.NestedScrollView;
 import androidx.recyclerview.widget.LinearLayoutManager;
 import androidx.recyclerview.widget.RecyclerView;
 
@@ -88,6 +91,14 @@ public class MainActivity extends AppCompatActivity {
         deviceList.setAdapter(deviceListAdapter);
         deviceList.setOnItemClickListener(this::onDeviceSelected);
 
+        // Pad the scroll view so content isn't hidden behind the navigation bar
+        NestedScrollView scrollView = findViewById(R.id.scroll_view);
+        ViewCompat.setOnApplyWindowInsetsListener(scrollView, (v, insets) -> {
+            int navBar = insets.getInsets(WindowInsetsCompat.Type.systemBars()).bottom;
+            v.setPadding(v.getPaddingLeft(), v.getPaddingTop(), v.getPaddingRight(), navBar);
+            return insets;
+        });
+
         updateStatus();
     }
 
@@ -105,11 +116,6 @@ public class MainActivity extends AppCompatActivity {
     // -------------------------------------------------------------------------
 
     private void toggleService() {
-        SharedPreferences prefs = getSharedPreferences("aimp_led", MODE_PRIVATE);
-        if (prefs.getString(CarLedService.PREF_BLE_ADDR, null) == null) {
-            Toast.makeText(this, "Select a BLE device first", Toast.LENGTH_SHORT).show();
-            return;
-        }
         Intent intent = new Intent(this, CarLedService.class);
         intent.setAction(CarLedService.ACTION_START);
         startForegroundService(intent);
@@ -162,6 +168,13 @@ public class MainActivity extends AppCompatActivity {
                                            @NonNull int[] results) {
         super.onRequestPermissionsResult(code, perms, results);
         if (code == PERM_REQUEST) {
+            for (int r : results) {
+                if (r != PackageManager.PERMISSION_GRANTED) {
+                    Toast.makeText(this, "Bluetooth permission required to scan",
+                        Toast.LENGTH_SHORT).show();
+                    return;
+                }
+            }
             MaterialButton btn = findViewById(R.id.scan_button);
             startScan(btn);
         }

@@ -4,7 +4,7 @@ import android.app.UiModeManager;
 import android.content.BroadcastReceiver;
 import android.content.Context;
 import android.content.Intent;
-import android.content.SharedPreferences;
+
 import android.util.Log;
 
 /**
@@ -26,11 +26,6 @@ public class AutoStartReceiver extends BroadcastReceiver {
 
         Log.i(TAG, "Received: " + action);
 
-        if (!hasBleAddress(context)) {
-            Log.d(TAG, "No BLE address saved — skipping auto-start");
-            return;
-        }
-
         if (isSystemTrigger(action) || action.startsWith("com.aimp.service.action.")) {
             startLedService(context);
         }
@@ -41,11 +36,6 @@ public class AutoStartReceiver extends BroadcastReceiver {
             || Intent.ACTION_MY_PACKAGE_REPLACED.equals(action)
             || UiModeManager.ACTION_ENTER_CAR_MODE.equals(action)
             || "android.app.action.ENTER_CAR_MODE".equals(action);
-    }
-
-    private static boolean hasBleAddress(Context context) {
-        SharedPreferences prefs = context.getSharedPreferences("aimp_led", Context.MODE_PRIVATE);
-        return prefs.getString(CarLedService.PREF_BLE_ADDR, null) != null;
     }
 
     static void startLedService(Context context) {

@@ -29,6 +29,8 @@ public class CarLedBleManager {
 
     private static final String TAG = "CarLedBle";
 
+    private static final int RECONNECT_DELAY = 5_000; // ms between reconnect attempts
+
     // Lerp animation: 30 steps over ~1 second (33 ms each)
     private static final int LERP_STEPS    = 30;
     private static final int LERP_INTERVAL = 33; // ms
@@ -44,6 +46,14 @@ public class CarLedBleManager {
     // Queued outgoing writes (serialized via GATT callback)
     private final LinkedBlockingQueue<byte[]> writeQueue = new LinkedBlockingQueue<>();
     private boolean writePending = false;
+
+    // Bumped on every disconnect; postDelayed retries capture this at schedule
+    // time and bail out if it changed, preventing stale callbacks from firing
+    // after a reconnect.
+    private volatile int drainGeneration = 0;
+
+    // Non-null while auto-reconnect is armed (cleared by explicit disconnect()).
+    private String reconnectAddress;
 
     // Current displayed color (for lerp start)
     private int currentColor = Color.BLACK;
@@ -66,19 +76,24 @@ public class CarLedBleManager {
             Log.w(TAG, "Bluetooth not enabled");
             return;
         }
+        reconnectAddress = address;
         BluetoothDevice device = adapter.getRemoteDevice(address);
         disconnect();
+        reconnectAddress = address; // restore after disconnect() clears it
         Log.i(TAG, "Connecting to " + address);
         gatt = device.connectGatt(context, false, gattCallback, BluetoothDevice.TRANSPORT_LE);
     }
 
     public void disconnect() {
+        reconnectAddress = null;
+        drainGeneration++; // invalidate any pending drainQueue retries
         if (gatt != null) {
             gatt.disconnect();
             gatt.close();
             gatt = null;
         }
         ready = false;
+        writeChar = null;
         writeQueue.clear();
         writePending = false;
     }
@@ -152,6 +167,7 @@ public class CarLedBleManager {
     }
 
     private void drainQueue() {
+        if (writeChar == null || gatt == null) { writePending = false; return; }
         byte[] next = writeQueue.poll();
         if (next == null) { writePending = false; return; }
         writePending = true;
@@ -160,7 +176,8 @@ public class CarLedBleManager {
         boolean ok = gatt.writeCharacteristic(writeChar);
         if (!ok) {
             Log.w(TAG, "writeCharacteristic returned false; retrying");
-            handler.postDelayed(this::drainQueue, 100);
+            final int gen = drainGeneration;
+            handler.postDelayed(() -> { if (drainGeneration == gen) drainQueue(); }, 100);
         }
     }
 
@@ -177,6 +194,14 @@ public class CarLedBleManager {
                 Log.i(TAG, "Disconnected");
                 ready = false;
                 writeChar = null;
+                drainGeneration++; // cancel any pending retries
+                writeQueue.clear();
+                writePending = false;
+                String addr = reconnectAddress;
+                if (addr != null) {
+                    Log.i(TAG, "Scheduling reconnect in " + RECONNECT_DELAY + " ms");
+                    handler.postDelayed(() -> connect(addr), RECONNECT_DELAY);
+                }
             }
         }
 
@@ -197,7 +222,8 @@ public class CarLedBleManager {
                 return;
             }
 
-            // Enable notifications on the notify characteristic (good practice)
+            // Enable notifications on the notify characteristic, then mark ready
+            // in onDescriptorWrite so the GATT is free before we start writing.
             BluetoothGattCharacteristic notifyChar =
                 svc.getCharacteristic(UUID.fromString(CarLedProtocol.NOTIFY_CHAR_UUID));
             if (notifyChar != null) {
@@ -207,12 +233,12 @@ public class CarLedBleManager {
                 if (desc != null) {
                     desc.setValue(BluetoothGattDescriptor.ENABLE_NOTIFICATION_VALUE);
                     g.writeDescriptor(desc);
+                    return; // markReady() called from onDescriptorWrite
                 }
             }
 
-            ready = true;
-            Log.i(TAG, "Ready to send color packets");
-            if (onReadyCallback != null) handler.post(onReadyCallback);
+            // No descriptor to write — safe to start sending immediately.
+            markReady();
         }
 
         @Override
@@ -224,7 +250,14 @@ public class CarLedBleManager {
 
         @Override
         public void onDescriptorWrite(BluetoothGatt g, BluetoothGattDescriptor d, int status) {
-            // Descriptor written; ready flag already set, nothing more needed
+            // Descriptor write finished; GATT is now free for characteristic writes.
+            markReady();
         }
     };
+
+    private void markReady() {
+        ready = true;
+        Log.i(TAG, "Ready to send color packets");
+        if (onReadyCallback != null) handler.post(onReadyCallback);
+    }
 }

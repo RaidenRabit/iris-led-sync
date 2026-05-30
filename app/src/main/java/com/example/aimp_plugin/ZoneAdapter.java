@@ -46,6 +46,7 @@ public class ZoneAdapter extends RecyclerView.Adapter<ZoneAdapter.ViewHolder>
     public void register() {
         zm.addListener(this);
         zm.addColorListener(this);
+        notifyDataSetChanged(); // paint headers with current effectiveColors immediately
     }
 
     public void unregister() {
@@ -102,6 +103,7 @@ public class ZoneAdapter extends RecyclerView.Adapter<ZoneAdapter.ViewHolder>
         private final ChipGroup      chipGroupColor;
         private final ChipGroup      chipGroupMode;
         private final View           colorSwatch;
+        private final com.google.android.material.button.MaterialButton btnReset;
 
         private boolean binding = false;
 
@@ -117,6 +119,7 @@ public class ZoneAdapter extends RecyclerView.Adapter<ZoneAdapter.ViewHolder>
             chipGroupColor = v.findViewById(R.id.chip_group_color);
             chipGroupMode  = v.findViewById(R.id.chip_group_mode);
             colorSwatch    = v.findViewById(R.id.color_swatch);
+            btnReset       = v.findViewById(R.id.btn_reset);
         }
 
         /** Full bind — called on structural changes. */
@@ -156,6 +159,9 @@ public class ZoneAdapter extends RecyclerView.Adapter<ZoneAdapter.ViewHolder>
 
             // Color mode chips
             buildModeChips(zone);
+
+            btnReset.setOnClickListener(v -> zm.updateZone(
+                zm.getZone(zone.index).withBrightness(255).withHueOffset(0).withSaturation(130)));
 
             tvName.setOnLongClickListener(v -> { showRenameDialog(zone); return true; });
             switchEnabled.setOnCheckedChangeListener((btn, checked) -> {

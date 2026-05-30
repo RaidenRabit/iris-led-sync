@@ -72,6 +72,9 @@ public final class ZoneManager {
             zones[i] = load(i);
             lerpFrom[i] = zones[i].color;
         }
+        // Seed effectiveColors so UI headers show the saved zone state immediately,
+        // not black, before any BLE connection or album-art event fires.
+        dispatchBle();
         Log.i(TAG, "Loaded " + ZONE_COUNT + " zones");
     }
 
@@ -111,6 +114,7 @@ public final class ZoneManager {
 
     public void onAlbumColors(Map<ColorMode, Integer> colors) {
         lastAlbumColors = colors;
+        Log.i(TAG, "Album colors received");
         // Compute each zone's target from its chosen ColorMode
         int[] targets = new int[ZONE_COUNT];
         boolean anyChange = false;

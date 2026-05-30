@@ -17,3 +17,5 @@ local.properties
 /.claude/
 /.idea/
 /carled apk/
+keystore.properties
+*.keystore

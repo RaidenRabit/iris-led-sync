@@ -1,6 +1,18 @@
 <?xml version="1.0" encoding="utf-8"?>
-<androidx.core.widget.NestedScrollView
+<FrameLayout
     xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent">
+
+    <ImageView
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:src="@drawable/bg_main"
+        android:scaleType="fitCenter"
+        android:background="#000000"
+        android:contentDescription="@null" />
+
+<androidx.core.widget.NestedScrollView
     android:layout_width="match_parent"
     android:layout_height="match_parent">
 
@@ -98,3 +110,5 @@
 
     </LinearLayout>
 </androidx.core.widget.NestedScrollView>
+
+</FrameLayout>

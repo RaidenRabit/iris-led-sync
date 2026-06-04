@@ -2,6 +2,8 @@
 
 Android app that syncs your car's LED strip colors to the album art of whatever is playing in **AIMP**. Colors transition smoothly as tracks change, and everything is controllable from the Android Auto dash or the notification shade.
 
+NOTE: This was made and tested with the LED lights from mikstoreph / mikstore. I don't know if it works with other brands.
+
 ## How it works
 
 ```

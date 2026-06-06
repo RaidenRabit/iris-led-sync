@@ -1,4 +1,4 @@
-package com.example.aimp_plugin
+package com.raidenrabit.irisledsync
 
 import org.junit.Test
 

@@ -1,4 +1,4 @@
-package com.example.aimp_plugin;
+package com.raidenrabit.irisledsync;
 
 /** How a zone derives its color from album art. */
 public enum ColorMode {

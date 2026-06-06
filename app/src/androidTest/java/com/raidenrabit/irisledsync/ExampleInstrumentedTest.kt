@@ -1,4 +1,4 @@
-package com.example.aimp_plugin
+package com.raidenrabit.irisledsync
 
 import androidx.test.platform.app.InstrumentationRegistry
 import androidx.test.ext.junit.runners.AndroidJUnit4
@@ -19,6 +19,6 @@ class ExampleInstrumentedTest {
     fun useAppContext() {
         // Context of the app under test.
         val appContext = InstrumentationRegistry.getInstrumentation().targetContext
-        assertEquals("com.example.aimp_plugin", appContext.packageName)
+        assertEquals("com.raidenrabit.irisledsync", appContext.packageName)
     }
 }

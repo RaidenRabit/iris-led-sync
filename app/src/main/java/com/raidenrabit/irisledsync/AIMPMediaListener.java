@@ -1,4 +1,4 @@
-package com.example.aimp_plugin;
+package com.raidenrabit.irisledsync;
 
 import android.content.BroadcastReceiver;
 import android.content.ComponentName;

@@ -1,4 +1,4 @@
-package com.example.aimp_plugin;
+package com.raidenrabit.irisledsync;
 
 import android.content.Context;
 import android.graphics.Color;
@@ -24,11 +24,15 @@ import java.util.Locale;
  * Adapter for zone cards.
  *
  * Implements two separate listener interfaces:
- *  - ZoneManager.Listener   → full rebind (enable/mode/name changes)
+ *  - ZoneManager.Listener   → full rebind (enable/mode/name changes, mode switch)
  *  - ZoneManager.ColorListener → partial bind (color preview only, fired at 30 fps during lerp)
  *
  * The partial bind path uses a String payload so RecyclerView never redraws the
  * entire card during a colour transition — only the preview strip updates.
+ *
+ * Sliders always reflect the CURRENT mode's values: when day/night mode switches,
+ * ZoneManager reloads zones from the appropriate prefs namespace, notifyListeners()
+ * fires, and the full rebind path updates all slider positions automatically.
  */
 public class ZoneAdapter extends RecyclerView.Adapter<ZoneAdapter.ViewHolder>
         implements ZoneManager.Listener, ZoneManager.ColorListener {
@@ -46,7 +50,7 @@ public class ZoneAdapter extends RecyclerView.Adapter<ZoneAdapter.ViewHolder>
     public void register() {
         zm.addListener(this);
         zm.addColorListener(this);
-        notifyDataSetChanged(); // paint headers with current effectiveColors immediately
+        notifyDataSetChanged();
     }
 
     public void unregister() {
@@ -54,17 +58,13 @@ public class ZoneAdapter extends RecyclerView.Adapter<ZoneAdapter.ViewHolder>
         zm.removeColorListener(this);
     }
 
-    // Full rebind on structural changes
     @Override public void onZonesChanged() { notifyDataSetChanged(); }
 
-    // Partial rebind on colour changes (30 fps during lerp)
     @Override public void onEffectiveColors(int[] colors) {
         for (int i = 0; i < ZoneManager.ZONE_COUNT; i++) {
             notifyItemChanged(i, PAYLOAD_COLOR);
         }
     }
-
-    // -------------------------------------------------------------------------
 
     @NonNull @Override
     public ViewHolder onCreateViewHolder(@NonNull ViewGroup parent, int viewType) {
@@ -72,13 +72,12 @@ public class ZoneAdapter extends RecyclerView.Adapter<ZoneAdapter.ViewHolder>
         return new ViewHolder(v);
     }
 
-    /** Partial bind — only updates the colour preview strip. */
     @Override
     public void onBindViewHolder(@NonNull ViewHolder h, int pos, @NonNull List<Object> payloads) {
         if (!payloads.isEmpty() && payloads.contains(PAYLOAD_COLOR)) {
             h.updatePreview(zm.getEffectiveColor(pos));
         } else {
-            onBindViewHolder(h, pos); // full bind
+            onBindViewHolder(h, pos);
         }
     }
 
@@ -92,11 +91,8 @@ public class ZoneAdapter extends RecyclerView.Adapter<ZoneAdapter.ViewHolder>
 
     class ViewHolder extends RecyclerView.ViewHolder {
 
-        // Preview bar views
         private final View         colorPreview;
         private final TextView     tvColorHex;
-
-        // Zone controls
         private final TextView       tvName;
         private final SwitchMaterial switchEnabled;
         private final View           rowBrightness, rowHue, rowSaturation;
@@ -122,7 +118,6 @@ public class ZoneAdapter extends RecyclerView.Adapter<ZoneAdapter.ViewHolder>
             btnReset       = v.findViewById(R.id.btn_reset);
         }
 
-        /** Full bind — called on structural changes. */
         void bind(LedZone zone, int effectiveColor) {
             binding = true;
 
@@ -130,20 +125,20 @@ public class ZoneAdapter extends RecyclerView.Adapter<ZoneAdapter.ViewHolder>
             tvName.setText(zone.name);
             switchEnabled.setChecked(zone.enabled);
 
-            // Sliders — onChange always reads the LIVE zone to avoid stale overwrite
-            bindSlider(rowBrightness, "Brightness", 0, 255, 1, zone.brightness,
-                v -> Math.round(v / 2.55f) + "%",
+            boolean isNight = DayNightManager.getInstance(context).isNightActive();
+
+            bindSlider(rowBrightness, "Brightness", 0, 400, 1, zone.brightness,
+                v -> v + "%",
                 v -> zm.updateZone(zm.getZone(zone.index).withBrightness(v)));
 
             bindSlider(rowHue, "Hue shift", 0, 360, 1, zone.hueOffset + 180,
-                v -> (v - 180 >= 0 ? "+" : "") + (v - 180) + "°",
+                v -> (v - 180 >= 0 ? "+" : "") + (v - 180) + "\u00b0",
                 v -> zm.updateZone(zm.getZone(zone.index).withHueOffset(v - 180)));
 
-            bindSlider(rowSaturation, "Intensity", 0, 200, 1, zone.saturation,
+            bindSlider(rowSaturation, "Intensity", 0, 400, 1, zone.saturation,
                 v -> v + "%",
                 v -> zm.updateZone(zm.getZone(zone.index).withSaturation(v)));
 
-            // Auto vs Manual
             chipGroupColor.check(zone.autoColor ? R.id.chip_auto : R.id.chip_manual);
             chipGroupMode.setVisibility(zone.autoColor ? View.VISIBLE : View.GONE);
             updateSwatch(zone);
@@ -157,11 +152,14 @@ public class ZoneAdapter extends RecyclerView.Adapter<ZoneAdapter.ViewHolder>
 
             colorSwatch.setOnClickListener(v -> showColorPicker(zone));
 
-            // Color mode chips
             buildModeChips(zone);
 
+            // Reset to mode-appropriate defaults (brightness always 100 = natural)
             btnReset.setOnClickListener(v -> zm.updateZone(
-                zm.getZone(zone.index).withBrightness(255).withHueOffset(0).withSaturation(130)));
+                zm.getZone(zone.index)
+                    .withBrightness(100)
+                    .withHueOffset(0)
+                    .withSaturation(isNight ? 150 : 250)));
 
             tvName.setOnLongClickListener(v -> { showRenameDialog(zone); return true; });
             switchEnabled.setOnCheckedChangeListener((btn, checked) -> {
@@ -171,13 +169,10 @@ public class ZoneAdapter extends RecyclerView.Adapter<ZoneAdapter.ViewHolder>
             binding = false;
         }
 
-        /** Partial bind — only colour strip. Called at every lerp step. */
         void updatePreview(int effectiveColor) {
             colorPreview.setBackgroundColor(effectiveColor);
             tvColorHex.setText(String.format(Locale.ROOT, "#%06X", effectiveColor & 0xFFFFFF));
         }
-
-        // ---- helpers ---------------------------------------------------------
 
         private void bindSlider(View row, String label, int min, int max, int step,
                                 int value, LabelFn labelFn, IntConsumer onChange) {
@@ -197,6 +192,7 @@ public class ZoneAdapter extends RecyclerView.Adapter<ZoneAdapter.ViewHolder>
             slider.addOnChangeListener((s, v, fromUser) -> {
                 if (fromUser) tvValue.setText(labelFn.label((int) v));
             });
+
             slider.addOnSliderTouchListener(new Slider.OnSliderTouchListener() {
                 @Override public void onStartTrackingTouch(@NonNull Slider s) {}
                 @Override public void onStopTrackingTouch(@NonNull Slider s) {

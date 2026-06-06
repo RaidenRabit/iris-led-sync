@@ -1,4 +1,4 @@
-package com.example.aimp_plugin;
+package com.raidenrabit.irisledsync;
 
 import androidx.annotation.NonNull;
 import androidx.car.app.CarContext;
@@ -22,9 +22,9 @@ import androidx.lifecycle.LifecycleOwner;
  */
 public class ZoneDetailScreen extends Screen implements ZoneManager.Listener {
 
-    private static final int BRIGHT_STEP = 26;   // ~10% of 255
+    private static final int BRIGHT_STEP = 40;   // ~10% of 400
     private static final int HUE_STEP    = 15;   // 15° per tap
-    private static final int SAT_STEP    = 20;   // 10% of 200
+    private static final int SAT_STEP    = 40;   // ~10% of 400
 
     private final ZoneManager zm;
     private final int zoneIndex;

@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="utf-8"?>
+<shortcuts xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <shortcut
+        android:shortcutId="led_day_mode"
+        android:enabled="true"
+        android:shortcutShortLabel="@string/shortcut_day_label"
+        android:shortcutLongLabel="@string/shortcut_day_label_long">
+        <intent
+            android:action="com.raidenrabit.irisledsync.SET_MODE"
+            android:targetPackage="com.raidenrabit.irisledsync"
+            android:targetClass="com.raidenrabit.irisledsync.VoiceCommandActivity">
+            <extra android:name="mode" android:value="DAY"/>
+        </intent>
+    </shortcut>
+
+    <shortcut
+        android:shortcutId="led_night_mode"
+        android:enabled="true"
+        android:shortcutShortLabel="@string/shortcut_night_label"
+        android:shortcutLongLabel="@string/shortcut_night_label_long">
+        <intent
+            android:action="com.raidenrabit.irisledsync.SET_MODE"
+            android:targetPackage="com.raidenrabit.irisledsync"
+            android:targetClass="com.raidenrabit.irisledsync.VoiceCommandActivity">
+            <extra android:name="mode" android:value="NIGHT"/>
+        </intent>
+    </shortcut>
+
+</shortcuts>

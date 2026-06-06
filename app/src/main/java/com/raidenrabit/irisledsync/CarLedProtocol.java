@@ -1,4 +1,4 @@
-package com.example.aimp_plugin;
+package com.raidenrabit.irisledsync;
 
 import android.graphics.Color;
 
@@ -55,8 +55,8 @@ public final class CarLedProtocol {
 
     /**
      * Apply a zone's hue offset, saturation boost, and brightness scaling to a raw color.
-     * Brightness is applied here as an RGB scale so the hardware brightness command is
-     * not needed for perceived-brightness control (hardware PWM range is too narrow).
+     * Brightness scales the HSV V channel; the hardware brightness bytes in the
+     * brightness packet are unreliable on this controller and are left at 0xFF.
      */
     static int transformColor(int argb, int hueOffset, int saturationPct, int brightness) {
         if (argb == 0) return 0;
@@ -64,16 +64,20 @@ public final class CarLedProtocol {
         float[] hsv = new float[3];
         Color.colorToHSV(argb, hsv);
 
-        // Hue offset (wrap 0-360)
         hsv[0] = ((hsv[0] + hueOffset) % 360 + 360) % 360;
-
-        // Saturation boost (0-200% → 0.0-2.0, clamped to 0-1)
         hsv[1] = Math.min(1.0f, hsv[1] * saturationPct / 100.0f);
 
-        // Brightness scale via HSV V channel
-        hsv[2] = hsv[2] * (brightness / 255.0f);
-
-        return Color.HSVToColor(hsv);
+        if (brightness <= 100) {
+            hsv[2] *= brightness / 100.0f;
+            return Color.HSVToColor(hsv);
+        }
+        // brightness > 100: get the hue/sat-adjusted color at full V, then scale RGB channels
+        int base = Color.HSVToColor(hsv);
+        float scale = brightness / 100.0f;
+        int r = Math.min(255, (int) (Color.red(base)   * scale));
+        int g = Math.min(255, (int) (Color.green(base) * scale));
+        int b = Math.min(255, (int) (Color.blue(base)  * scale));
+        return Color.rgb(r, g, b);
     }
 
     // ---- framing -------------------------------------------------------------

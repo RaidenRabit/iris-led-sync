@@ -1,3 +1,7 @@
 <resources>
     <string name="app_name">Iris LED Sync</string>
+    <string name="shortcut_day_label">Day mode</string>
+    <string name="shortcut_day_label_long">Turn on day mode</string>
+    <string name="shortcut_night_label">Night mode</string>
+    <string name="shortcut_night_label_long">Turn on night mode</string>
 </resources>

@@ -10,11 +10,11 @@ val keystoreProps = Properties().apply {
 }
 
 android {
-    namespace = "com.example.aimp_plugin"
+    namespace = "com.raidenrabit.irisledsync"
     compileSdk = 35
 
     defaultConfig {
-        applicationId = "com.example.aimp_plugin"
+        applicationId = "com.raidenrabit.irisledsync"
         minSdk = 26
         targetSdk = 35
         versionCode = 1

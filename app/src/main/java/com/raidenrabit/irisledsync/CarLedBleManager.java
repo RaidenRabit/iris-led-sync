@@ -1,4 +1,4 @@
-package com.example.aimp_plugin;
+package com.raidenrabit.irisledsync;
 
 import android.annotation.SuppressLint;
 import android.bluetooth.BluetoothAdapter;
@@ -42,6 +42,7 @@ public class CarLedBleManager {
     private BluetoothGattCharacteristic writeChar;
     private boolean ready = false; // services discovered and characteristic found
     private Runnable onReadyCallback;
+    private Runnable onDisconnectCallback;
 
     // Queued outgoing writes (serialized via GATT callback)
     private final LinkedBlockingQueue<byte[]> writeQueue = new LinkedBlockingQueue<>();
@@ -101,6 +102,8 @@ public class CarLedBleManager {
     public boolean isReady() { return ready; }
 
     public void setOnReadyCallback(Runnable cb) { onReadyCallback = cb; }
+
+    public void setOnDisconnectCallback(Runnable cb) { onDisconnectCallback = cb; }
 
     /**
      * Animate from the current displayed color to {@code targetArgb} over ~1 s.
@@ -197,6 +200,7 @@ public class CarLedBleManager {
                 drainGeneration++; // cancel any pending retries
                 writeQueue.clear();
                 writePending = false;
+                if (onDisconnectCallback != null) handler.post(onDisconnectCallback);
                 String addr = reconnectAddress;
                 if (addr != null) {
                     Log.i(TAG, "Scheduling reconnect in " + RECONNECT_DELAY + " ms");

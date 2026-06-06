@@ -1,4 +1,4 @@
-package com.example.aimp_plugin;
+package com.raidenrabit.irisledsync;
 
 import androidx.annotation.NonNull;
 import androidx.car.app.CarAppService;

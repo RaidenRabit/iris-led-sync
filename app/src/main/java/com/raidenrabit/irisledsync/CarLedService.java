@@ -125,6 +125,8 @@ public class CarLedService extends Service implements ZoneManager.Listener {
                 else Log.w(TAG, "No BLE address — open app to scan");
                 if (AIMPMediaListener.getInstance() != null)
                     AIMPMediaListener.getInstance().attachLedService(this);
+                else
+                    AIMPMediaListener.ensureBound(this);
                 return START_STICKY;
         }
 

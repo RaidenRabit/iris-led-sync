@@ -56,9 +56,17 @@ public class AIMPMediaListener extends NotificationListenerService {
     private String lastTitle = null;
     private boolean artRetryScheduled = false;
 
+    /** Access can stay granted while the system silently drops the binding (APK update, MIUI kills). */
+    static void ensureBound(Context ctx) {
+        if (instance != null) return;
+        Log.i(TAG, "Listener not bound — requesting rebind");
+        requestRebind(new ComponentName(ctx, AIMPMediaListener.class));
+    }
+
     public void attachLedService(CarLedService svc) {
         ledService = svc;
-        // Apply colors for the currently playing track immediately
+        lastGenerationId = -1;
+        lastTitle = null;
         if (currentController != null) processMetadata(currentController.getMetadata());
     }
 
@@ -92,6 +100,13 @@ public class AIMPMediaListener extends NotificationListenerService {
             currentController = null;
         }
         instance = null;
+    }
+
+    @Override
+    public void onListenerDisconnected() {
+        super.onListenerDisconnected();
+        Log.w(TAG, "Listener disconnected — requesting rebind");
+        requestRebind(new ComponentName(this, AIMPMediaListener.class));
     }
 
     // -------------------------------------------------------------------------

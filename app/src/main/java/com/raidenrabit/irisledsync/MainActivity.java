@@ -269,6 +269,7 @@ public class MainActivity extends AppCompatActivity
     private void updateNotifPermissionState() {
         boolean hasAccess = hasNotificationAccess();
         cardNotifPermission.setVisibility(hasAccess ? View.GONE : View.VISIBLE);
+        if (hasAccess) AIMPMediaListener.ensureBound(this);
 
         if (!hasAccess && !notifDialogShown) {
             notifDialogShown = true;

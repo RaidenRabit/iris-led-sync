@@ -6,6 +6,7 @@ import android.graphics.drawable.GradientDrawable;
 import android.view.LayoutInflater;
 import android.view.View;
 import android.view.ViewGroup;
+import android.widget.GridLayout;
 import android.widget.TextView;
 
 import androidx.annotation.NonNull;
@@ -14,7 +15,6 @@ import androidx.recyclerview.widget.RecyclerView;
 
 import com.google.android.material.chip.Chip;
 import com.google.android.material.chip.ChipGroup;
-import com.google.android.material.slider.Slider;
 import com.google.android.material.switchmaterial.SwitchMaterial;
 
 import java.util.List;
@@ -30,17 +30,26 @@ import java.util.Locale;
  * The partial bind path uses a String payload so RecyclerView never redraws the
  * entire card during a colour transition — only the preview strip updates.
  *
- * Sliders always reflect the CURRENT mode's values: when day/night mode switches,
+ * Knobs send live (throttled, unsaved) previews to the LEDs while dragging and commit
+ * the value when the finger lifts. The brightness knob runs on BrightnessCurve and is
+ * capped to the current mode's maximum.
+ *
+ * Knobs always reflect the CURRENT mode's values: when day/night mode switches,
  * ZoneManager reloads zones from the appropriate prefs namespace, notifyListeners()
- * fires, and the full rebind path updates all slider positions automatically.
+ * fires, and the full rebind path updates all knob positions automatically.
  */
 public class ZoneAdapter extends RecyclerView.Adapter<ZoneAdapter.ViewHolder>
         implements ZoneManager.Listener, ZoneManager.ColorListener {
 
     private static final String PAYLOAD_COLOR = "color";
 
+    private static final int BRIGHTNESS_KNOB_DP = 120;
+    private static final int PREVIEW_HEIGHT_DAY_DP   = 72;
+    private static final int PREVIEW_HEIGHT_NIGHT_DP = 48;
+
     private final Context context;
     private final ZoneManager zm;
+    private final boolean[]   advancedOpen = new boolean[ZoneManager.ZONE_COUNT];
 
     public ZoneAdapter(Context context) {
         this.context = context;
@@ -91,23 +100,29 @@ public class ZoneAdapter extends RecyclerView.Adapter<ZoneAdapter.ViewHolder>
 
     class ViewHolder extends RecyclerView.ViewHolder {
 
+        private final View         previewFrame;
         private final View         colorPreview;
         private final TextView     tvColorHex;
         private final TextView       tvName;
+        private final View           btnRename;
         private final SwitchMaterial switchEnabled;
         private final View           rowBrightness, rowHue, rowSaturation;
         private final ChipGroup      chipGroupColor;
         private final ChipGroup      chipGroupMode;
         private final View           colorSwatch;
+        private final View           layoutAdvanced;
+        private final com.google.android.material.button.MaterialButton btnAdvanced;
         private final com.google.android.material.button.MaterialButton btnReset;
 
         private boolean binding = false;
 
         ViewHolder(View v) {
             super(v);
+            previewFrame   = v.findViewById(R.id.preview_frame);
             colorPreview   = v.findViewById(R.id.color_preview);
             tvColorHex     = v.findViewById(R.id.tv_color_hex);
             tvName         = v.findViewById(R.id.tv_zone_name);
+            btnRename      = v.findViewById(R.id.btn_rename);
             switchEnabled  = v.findViewById(R.id.switch_enabled);
             rowBrightness  = v.findViewById(R.id.row_brightness);
             rowHue         = v.findViewById(R.id.row_hue);
@@ -115,7 +130,14 @@ public class ZoneAdapter extends RecyclerView.Adapter<ZoneAdapter.ViewHolder>
             chipGroupColor = v.findViewById(R.id.chip_group_color);
             chipGroupMode  = v.findViewById(R.id.chip_group_mode);
             colorSwatch    = v.findViewById(R.id.color_swatch);
+            layoutAdvanced = v.findViewById(R.id.layout_advanced);
+            btnAdvanced    = v.findViewById(R.id.btn_advanced);
             btnReset       = v.findViewById(R.id.btn_reset);
+
+            View brightnessKnob = rowBrightness.findViewById(R.id.knob);
+            ViewGroup.LayoutParams lp = brightnessKnob.getLayoutParams();
+            lp.width = lp.height = dp(BRIGHTNESS_KNOB_DP);
+            brightnessKnob.setLayoutParams(lp);
         }
 
         void bind(LedZone zone, int effectiveColor) {
@@ -126,18 +148,33 @@ public class ZoneAdapter extends RecyclerView.Adapter<ZoneAdapter.ViewHolder>
             switchEnabled.setChecked(zone.enabled);
 
             boolean isNight = DayNightManager.getInstance(context).isNightActive();
+            int maxBrightness = ZoneManager.maxBrightness(isNight);
 
-            bindSlider(rowBrightness, "Brightness", 0, 400, 1, zone.brightness,
-                v -> v + "%",
-                v -> zm.updateZone(zm.getZone(zone.index).withBrightness(v)));
+            // Night: shorter preview strip, no hex code — less glowing area on screen
+            ViewGroup.LayoutParams lp = previewFrame.getLayoutParams();
+            lp.height = dp(isNight ? PREVIEW_HEIGHT_NIGHT_DP : PREVIEW_HEIGHT_DAY_DP);
+            previewFrame.setLayoutParams(lp);
+            tvColorHex.setVisibility(isNight ? View.GONE : View.VISIBLE);
 
-            bindSlider(rowHue, "Hue shift", 0, 360, 1, zone.hueOffset + 180,
+            bindKnob(rowBrightness, "Brightness", 0, BrightnessCurve.POSITIONS,
+                BrightnessCurve.toPosition(zone.brightness, maxBrightness),
+                v -> BrightnessCurve.toPercent(v, maxBrightness) + "%",
+                v -> zm.getZone(zone.index).withBrightness(BrightnessCurve.toPercent(v, maxBrightness)));
+
+            bindKnob(rowHue, "Hue shift", 0, 360, zone.hueOffset + 180,
                 v -> (v - 180 >= 0 ? "+" : "") + (v - 180) + "\u00b0",
-                v -> zm.updateZone(zm.getZone(zone.index).withHueOffset(v - 180)));
+                v -> zm.getZone(zone.index).withHueOffset(v - 180));
 
-            bindSlider(rowSaturation, "Intensity", 0, 400, 1, zone.saturation,
+            bindKnob(rowSaturation, "Intensity", 0, 400, zone.saturation,
                 v -> v + "%",
-                v -> zm.updateZone(zm.getZone(zone.index).withSaturation(v)));
+                v -> zm.getZone(zone.index).withSaturation(v));
+
+            layoutAdvanced.setVisibility(advancedOpen[zone.index] ? View.VISIBLE : View.GONE);
+            btnAdvanced.setText(advancedOpen[zone.index] ? "Advanced \u25B4" : "Advanced \u25BE");
+            btnAdvanced.setOnClickListener(v -> {
+                advancedOpen[zone.index] = !advancedOpen[zone.index];
+                notifyItemChanged(zone.index);
+            });
 
             chipGroupColor.check(zone.autoColor ? R.id.chip_auto : R.id.chip_manual);
             chipGroupMode.setVisibility(zone.autoColor ? View.VISIBLE : View.GONE);
@@ -154,14 +191,15 @@ public class ZoneAdapter extends RecyclerView.Adapter<ZoneAdapter.ViewHolder>
 
             buildModeChips(zone);
 
-            // Reset to mode-appropriate defaults (brightness always 100 = natural)
+            // Reset to mode-appropriate defaults (night resets dim, not to full)
             btnReset.setOnClickListener(v -> zm.updateZone(
                 zm.getZone(zone.index)
-                    .withBrightness(100)
+                    .withBrightness(ZoneManager.defaultBrightness(isNight))
                     .withHueOffset(0)
-                    .withSaturation(isNight ? 150 : 250)));
+                    .withSaturation(ZoneManager.defaultSaturation(isNight))));
 
-            tvName.setOnLongClickListener(v -> { showRenameDialog(zone); return true; });
+            tvName.setOnClickListener(v -> showRenameDialog(zone));
+            btnRename.setOnClickListener(v -> showRenameDialog(zone));
             switchEnabled.setOnCheckedChangeListener((btn, checked) -> {
                 if (!binding) zm.updateZone(zm.getZone(zone.index).withEnabled(checked));
             });
@@ -174,30 +212,23 @@ public class ZoneAdapter extends RecyclerView.Adapter<ZoneAdapter.ViewHolder>
             tvColorHex.setText(String.format(Locale.ROOT, "#%06X", effectiveColor & 0xFFFFFF));
         }
 
-        private void bindSlider(View row, String label, int min, int max, int step,
-                                int value, LabelFn labelFn, IntConsumer onChange) {
+        private void bindKnob(View row, String label, int min, int max,
+                              int value, LabelFn labelFn, ZoneFn zoneFor) {
             ((TextView) row.findViewById(R.id.tv_label)).setText(label);
-            Slider   slider  = row.findViewById(R.id.slider);
-            TextView tvValue = row.findViewById(R.id.tv_value);
+            KnobView knob = row.findViewById(R.id.knob);
 
-            slider.setValueFrom(min);
-            slider.setValueTo(max);
-            slider.setStepSize(step);
-            slider.setValue(Math.max(min, Math.min(max, value)));
-            tvValue.setText(labelFn.label(value));
+            knob.setListener(null);
+            knob.setRange(min, max);
+            knob.setValue(value);
+            knob.setValueText(labelFn.label(knob.getValue()));
+            knob.setContentDescription(label);
 
-            slider.clearOnSliderTouchListeners();
-            slider.clearOnChangeListeners();
-
-            slider.addOnChangeListener((s, v, fromUser) -> {
-                if (fromUser) tvValue.setText(labelFn.label((int) v));
-            });
-
-            slider.addOnSliderTouchListener(new Slider.OnSliderTouchListener() {
-                @Override public void onStartTrackingTouch(@NonNull Slider s) {}
-                @Override public void onStopTrackingTouch(@NonNull Slider s) {
-                    onChange.accept((int) s.getValue());
+            knob.setListener(new KnobView.Listener() {
+                @Override public void onChange(int v) {
+                    knob.setValueText(labelFn.label(v));
+                    zm.previewZone(zoneFor.zone(v));
                 }
+                @Override public void onStop(int v) { zm.updateZone(zoneFor.zone(v)); }
             });
         }
 
@@ -246,14 +277,43 @@ public class ZoneAdapter extends RecyclerView.Adapter<ZoneAdapter.ViewHolder>
             };
             String[] names = {"Red","Orange","Yellow","Green","Cyan","Blue","Purple","Pink",
                               "White","Grey","Coral","Mint"};
-            new AlertDialog.Builder(context)
+
+            GridLayout grid = new GridLayout(context);
+            grid.setColumnCount(4);
+            grid.setPadding(dp(16), dp(16), dp(16), 0);
+            AlertDialog dialog = new AlertDialog.Builder(context)
                 .setTitle("Pick color for " + zone.name)
-                .setItems(names, (d, which) ->
-                    zm.updateZone(zm.getZone(zone.index).withColor(presets[which]).withAutoColor(false)))
-                .show();
+                .setView(grid)
+                .setNegativeButton("Cancel", null)
+                .create();
+
+            for (int i = 0; i < presets.length; i++) {
+                int color = presets[i];
+                View swatch = new View(context);
+                GradientDrawable bg = (GradientDrawable) context.getDrawable(R.drawable.color_swatch_bg).mutate();
+                bg.setColor(color);
+                swatch.setBackground(bg);
+                swatch.setContentDescription(names[i]);
+                GridLayout.LayoutParams glp = new GridLayout.LayoutParams(
+                    GridLayout.spec(GridLayout.UNDEFINED, 1f), GridLayout.spec(GridLayout.UNDEFINED, 1f));
+                glp.width  = dp(48);
+                glp.height = dp(48);
+                glp.setMargins(dp(8), dp(8), dp(8), dp(8));
+                swatch.setLayoutParams(glp);
+                swatch.setOnClickListener(v -> {
+                    zm.updateZone(zm.getZone(zone.index).withColor(color).withAutoColor(false));
+                    dialog.dismiss();
+                });
+                grid.addView(swatch);
+            }
+            dialog.show();
         }
     }
 
-    interface LabelFn    { String label(int v); }
-    interface IntConsumer { void accept(int v); }
+    private int dp(int v) {
+        return Math.round(v * context.getResources().getDisplayMetrics().density);
+    }
+
+    interface LabelFn { String label(int v); }
+    interface ZoneFn  { LedZone zone(int v); }
 }

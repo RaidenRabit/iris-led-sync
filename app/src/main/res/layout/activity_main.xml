@@ -1,10 +1,13 @@
 <?xml version="1.0" encoding="utf-8"?>
 <FrameLayout
     xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
     android:layout_width="match_parent"
     android:layout_height="match_parent">
 
+    <!-- Dimmed by MainActivity while the LED night mode is active -->
     <ImageView
+        android:id="@+id/bg_image"
         android:layout_width="match_parent"
         android:layout_height="match_parent"
         android:src="@drawable/bg_main"
@@ -28,13 +31,12 @@
         <!-- Notification access warning banner (hidden once access is granted) -->
         <com.google.android.material.card.MaterialCardView
             android:id="@+id/card_notif_permission"
-            xmlns:app="http://schemas.android.com/apk/res-auto"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:layout_marginHorizontal="16dp"
             android:layout_marginTop="12dp"
             android:layout_marginBottom="4dp"
-            app:cardBackgroundColor="#FFCDD2"
+            app:cardBackgroundColor="?attr/bannerBackground"
             app:cardCornerRadius="12dp"
             app:cardElevation="2dp"
             android:visibility="gone">
@@ -51,7 +53,7 @@
                     android:text="Notification Access Required"
                     android:textAppearance="@style/TextAppearance.MaterialComponents.Subtitle1"
                     android:textStyle="bold"
-                    android:textColor="#B71C1C" />
+                    android:textColor="?attr/bannerText" />
 
                 <TextView
                     android:layout_width="match_parent"
@@ -59,7 +61,7 @@
                     android:layout_marginTop="4dp"
                     android:text="Required so Iris LED Sync can read AIMP album art and sync LED colors to your music. Without it, colors will not change when tracks change."
                     android:textAppearance="@style/TextAppearance.MaterialComponents.Body2"
-                    android:textColor="#B71C1C" />
+                    android:textColor="?attr/bannerText" />
 
                 <com.google.android.material.button.MaterialButton
                     android:id="@+id/btn_grant_notif"
@@ -71,23 +73,121 @@
             </LinearLayout>
         </com.google.android.material.card.MaterialCardView>
 
-        <!-- Device status -->
-        <TextView
-            android:id="@+id/status_text"
+        <!-- Connection status + service start/stop -->
+        <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:paddingHorizontal="16dp"
-            android:paddingVertical="8dp"
-            android:textSize="14sp"
-            android:textStyle="bold"
-            android:textColor="?attr/colorOnSurface"
-            android:text="BLE: not paired" />
+            android:layout_marginHorizontal="16dp"
+            android:layout_marginTop="8dp"
+            android:orientation="horizontal"
+            android:gravity="center_vertical">
+
+            <View
+                android:id="@+id/status_dot"
+                android:layout_width="12dp"
+                android:layout_height="12dp"
+                android:layout_marginEnd="10dp"
+                android:background="@drawable/status_dot" />
+
+            <TextView
+                android:id="@+id/status_text"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:textSize="16sp"
+                android:textStyle="bold"
+                android:textColor="?attr/colorOnSurface"
+                android:text="Not paired" />
+
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/start_button"
+                style="@style/Widget.MaterialComponents.Button.OutlinedButton"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="Start" />
+
+        </LinearLayout>
+
+        <!-- Master brightness — dims every zone at once, keeping their balance -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginHorizontal="16dp"
+            android:layout_marginTop="12dp"
+            android:orientation="horizontal">
+
+            <TextView
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:text="Master brightness"
+                android:textAppearance="@style/TextAppearance.MaterialComponents.Subtitle1"
+                android:textStyle="bold" />
+
+            <TextView
+                android:id="@+id/tv_master_value"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="100%"
+                android:textAppearance="@style/TextAppearance.MaterialComponents.Subtitle1"
+                android:textColor="?attr/colorOnSurface" />
+
+        </LinearLayout>
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginHorizontal="8dp"
+            android:orientation="horizontal"
+            android:gravity="center_vertical">
+
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/btn_master_down"
+                style="@style/Widget.MaterialComponents.Button.TextButton"
+                android:layout_width="56dp"
+                android:layout_height="56dp"
+                android:minWidth="0dp"
+                android:insetTop="0dp"
+                android:insetBottom="0dp"
+                android:padding="0dp"
+                android:text="−"
+                android:textSize="28sp"
+                android:contentDescription="Dimmer" />
+
+            <com.google.android.material.slider.Slider
+                android:id="@+id/slider_master"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:valueFrom="0"
+                android:valueTo="1000"
+                android:stepSize="1"
+                android:contentDescription="Master brightness"
+                app:labelBehavior="gone"
+                app:thumbRadius="12dp"
+                app:trackHeight="8dp" />
+
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/btn_master_up"
+                style="@style/Widget.MaterialComponents.Button.TextButton"
+                android:layout_width="56dp"
+                android:layout_height="56dp"
+                android:minWidth="0dp"
+                android:insetTop="0dp"
+                android:insetBottom="0dp"
+                android:padding="0dp"
+                android:text="+"
+                android:textSize="28sp"
+                android:contentDescription="Brighter" />
+
+        </LinearLayout>
 
         <!-- Day / Night mode selector -->
         <TextView
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:paddingHorizontal="16dp"
+            android:paddingTop="4dp"
             android:paddingBottom="6dp"
             android:text="LED Mode"
             android:textAppearance="@style/TextAppearance.MaterialComponents.Subtitle1"
@@ -95,32 +195,34 @@
 
         <com.google.android.material.button.MaterialButtonToggleGroup
             android:id="@+id/toggle_mode_group"
-            android:layout_width="wrap_content"
+            android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:layout_marginHorizontal="16dp"
             app:singleSelection="true"
-            app:selectionRequired="true"
-            xmlns:app="http://schemas.android.com/apk/res-auto">
+            app:selectionRequired="true">
 
             <com.google.android.material.button.MaterialButton
                 android:id="@+id/btn_mode_day"
                 style="@style/Widget.MaterialComponents.Button.OutlinedButton"
-                android:layout_width="wrap_content"
+                android:layout_width="0dp"
                 android:layout_height="wrap_content"
+                android:layout_weight="1"
                 android:text="Day" />
 
             <com.google.android.material.button.MaterialButton
                 android:id="@+id/btn_mode_night"
                 style="@style/Widget.MaterialComponents.Button.OutlinedButton"
-                android:layout_width="wrap_content"
+                android:layout_width="0dp"
                 android:layout_height="wrap_content"
+                android:layout_weight="1"
                 android:text="Night" />
 
             <com.google.android.material.button.MaterialButton
                 android:id="@+id/btn_mode_auto"
                 style="@style/Widget.MaterialComponents.Button.OutlinedButton"
-                android:layout_width="wrap_content"
+                android:layout_width="0dp"
                 android:layout_height="wrap_content"
+                android:layout_weight="1"
                 android:text="Auto" />
 
         </com.google.android.material.button.MaterialButtonToggleGroup>
@@ -230,55 +332,39 @@
             android:background="?attr/colorOnSurface"
             android:alpha="0.12" />
 
-        <!-- Service control -->
+        <!-- BLE device setup — collapsed once a controller is paired -->
         <TextView
+            android:id="@+id/tv_setup_header"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:paddingHorizontal="16dp"
-            android:paddingBottom="4dp"
-            android:text="Service"
-            android:textAppearance="@style/TextAppearance.MaterialComponents.Subtitle1"
-            android:textStyle="bold" />
-
-        <com.google.android.material.button.MaterialButton
-            android:id="@+id/start_button"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginHorizontal="16dp"
-            android:text="Start Iris LED Sync" />
-
-        <!-- Divider -->
-        <View
-            android:layout_width="match_parent"
-            android:layout_height="1dp"
-            android:layout_marginHorizontal="16dp"
-            android:layout_marginVertical="12dp"
-            android:background="?attr/colorOnSurface"
-            android:alpha="0.12" />
-
-        <!-- BLE device setup -->
-        <TextView
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:paddingHorizontal="16dp"
-            android:paddingBottom="4dp"
+            android:paddingVertical="8dp"
+            android:background="?attr/selectableItemBackground"
             android:text="LED Controller Device"
             android:textAppearance="@style/TextAppearance.MaterialComponents.Subtitle1"
             android:textStyle="bold" />
 
-        <com.google.android.material.button.MaterialButton
-            android:id="@+id/scan_button"
-            style="@style/Widget.MaterialComponents.Button.OutlinedButton"
+        <LinearLayout
+            android:id="@+id/layout_setup"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_marginHorizontal="16dp"
-            android:text="Scan for LED controller" />
+            android:orientation="vertical">
 
-        <ListView
-            android:id="@+id/device_list"
-            android:layout_width="match_parent"
-            android:layout_height="220dp"
-            android:layout_marginTop="4dp" />
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/scan_button"
+                style="@style/Widget.MaterialComponents.Button.OutlinedButton"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginHorizontal="16dp"
+                android:text="Scan for LED controller" />
+
+            <ListView
+                android:id="@+id/device_list"
+                android:layout_width="match_parent"
+                android:layout_height="220dp"
+                android:layout_marginTop="4dp" />
+
+        </LinearLayout>
 
     </LinearLayout>
 </androidx.core.widget.NestedScrollView>

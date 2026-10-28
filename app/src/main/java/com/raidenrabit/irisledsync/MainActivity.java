@@ -27,6 +27,7 @@ import android.widget.Toast;
 import java.util.Locale;
 
 import androidx.annotation.NonNull;
+import androidx.annotation.Nullable;
 import androidx.appcompat.app.AlertDialog;
 import androidx.appcompat.app.AppCompatActivity;
 import androidx.core.app.ActivityCompat;
@@ -40,6 +41,8 @@ import androidx.recyclerview.widget.RecyclerView;
 
 import com.google.android.material.button.MaterialButton;
 import com.google.android.material.button.MaterialButtonToggleGroup;
+import com.google.android.material.color.MaterialColors;
+import com.google.android.material.slider.Slider;
 
 import java.util.ArrayList;
 import java.util.HashSet;
@@ -54,6 +57,12 @@ public class MainActivity extends AppCompatActivity
     private static final long SCAN_TIMEOUT = 10_000;
 
     private TextView    statusText;
+    private View        statusDot;
+    private MaterialButton startButton;
+    private Slider      sliderMaster;
+    private TextView    tvMasterValue;
+    private View        layoutSetup;
+    private TextView    tvSetupHeader;
     private TextView    tvModeActive;
     private View        cardNotifPermission;
     private View        layoutAutoSchedule;
@@ -64,6 +73,9 @@ public class MainActivity extends AppCompatActivity
     private MaterialButtonToggleGroup toggleModeGroup;
 
     private boolean notifDialogShown = false;
+
+    /** Whether the LED-night theme was applied in onCreate — a mismatch triggers recreate(). */
+    private boolean themeNight;
 
     private final List<String>          deviceNames   = new ArrayList<>();
     private final List<BluetoothDevice> devices       = new ArrayList<>();
@@ -78,11 +90,17 @@ public class MainActivity extends AppCompatActivity
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
+        // The UI follows the LED night mode (not the system dark mode) so it dims with the cabin.
+        themeNight = DayNightManager.getInstance(this).isNightActive();
+        if (themeNight) setTheme(R.style.Theme_AIMPplugin_LedNight);
         super.onCreate(savedInstanceState);
         WindowCompat.setDecorFitsSystemWindows(getWindow(), false);
         setContentView(R.layout.activity_main);
 
+        findViewById(R.id.bg_image).setAlpha(themeNight ? 0.2f : 1f);
+
         statusText          = findViewById(R.id.status_text);
+        statusDot           = findViewById(R.id.status_dot);
         tvModeActive        = findViewById(R.id.tv_mode_active);
         cardNotifPermission = findViewById(R.id.card_notif_permission);
         findViewById(R.id.btn_grant_notif).setOnClickListener(v ->
@@ -133,9 +151,35 @@ public class MainActivity extends AppCompatActivity
         zoneAdapter = new ZoneAdapter(this);
         rvZones.setAdapter(zoneAdapter);
 
-        // Service start button
-        MaterialButton startButton = findViewById(R.id.start_button);
+        // Service start/stop button
+        startButton = findViewById(R.id.start_button);
         startButton.setOnClickListener(v -> toggleService());
+
+        // Master brightness: slider previews live while dragging and saves on release;
+        // the −/+ buttons step a twentieth of the slider's travel.
+        sliderMaster  = findViewById(R.id.slider_master);
+        tvMasterValue = findViewById(R.id.tv_master_value);
+        sliderMaster.addOnChangeListener((slider, value, fromUser) -> {
+            int pct = BrightnessCurve.toPercent((int) value, 100);
+            tvMasterValue.setText(pct + "%");
+            if (fromUser) ZoneManager.getInstance(this).previewMaster(pct);
+        });
+        sliderMaster.addOnSliderTouchListener(new Slider.OnSliderTouchListener() {
+            @Override public void onStartTrackingTouch(@NonNull Slider slider) {}
+            @Override public void onStopTrackingTouch(@NonNull Slider slider) {
+                ZoneManager.getInstance(MainActivity.this)
+                    .setMaster(BrightnessCurve.toPercent((int) slider.getValue(), 100));
+            }
+        });
+        findViewById(R.id.btn_master_down).setOnClickListener(v -> stepMaster(-1));
+        findViewById(R.id.btn_master_up).setOnClickListener(v -> stepMaster(1));
+
+        // Device setup section — collapsed once a controller is paired
+        layoutSetup   = findViewById(R.id.layout_setup);
+        tvSetupHeader = findViewById(R.id.tv_setup_header);
+        tvSetupHeader.setOnClickListener(v ->
+            setSetupExpanded(layoutSetup.getVisibility() != View.VISIBLE));
+        setSetupExpanded(getSavedDeviceAddress() == null);
 
         // BLE scan
         MaterialButton scanButton = findViewById(R.id.scan_button);
@@ -170,6 +214,11 @@ public class MainActivity extends AppCompatActivity
 
     @Override protected void onResume() {
         super.onResume();
+        // The mode may have flipped while we were in the background (Auto schedule, notification)
+        if (DayNightManager.getInstance(this).isNightActive() != themeNight) {
+            recreate();
+            return;
+        }
         DayNightManager.getInstance(this).addListener(this);
         ZoneManager.getInstance(this).addListener(this);
         zoneAdapter.register();
@@ -177,6 +226,7 @@ public class MainActivity extends AppCompatActivity
         updateModeActiveLabel();
         updateAutoScheduleButtons();
         updateStatus();
+        updateMasterSlider();
         updateNotifPermissionState();
     }
 
@@ -191,6 +241,10 @@ public class MainActivity extends AppCompatActivity
 
     @Override
     public void onModeChanged(boolean isNight) {
+        if (isNight != themeNight) {
+            recreate();
+            return;
+        }
         updateModeActiveLabel();
     }
 
@@ -199,6 +253,28 @@ public class MainActivity extends AppCompatActivity
     @Override
     public void onZonesChanged() {
         updateStatus();
+        updateMasterSlider();
+    }
+
+    // ---- master brightness ---------------------------------------------------
+
+    private void updateMasterSlider() {
+        if (sliderMaster.isPressed()) return; // don't fight the finger
+        int pct = ZoneManager.getInstance(this).getMaster();
+        sliderMaster.setValue(BrightnessCurve.toPosition(pct, 100));
+        tvMasterValue.setText(pct + "%");
+    }
+
+    private void stepMaster(int direction) {
+        int step = BrightnessCurve.POSITIONS / 20;
+        int pos  = Math.round(sliderMaster.getValue()) + direction * step;
+        pos = Math.max(0, Math.min(BrightnessCurve.POSITIONS, pos));
+        ZoneManager.getInstance(this).setMaster(BrightnessCurve.toPercent(pos, 100));
+    }
+
+    private void setSetupExpanded(boolean expanded) {
+        layoutSetup.setVisibility(expanded ? View.VISIBLE : View.GONE);
+        tvSetupHeader.setText((expanded ? "\u25BE " : "\u25B8 ") + "LED Controller Device");
     }
 
     // ---- mode UI helpers -----------------------------------------------------
@@ -248,22 +324,40 @@ public class MainActivity extends AppCompatActivity
 
     private void toggleService() {
         Intent intent = new Intent(this, CarLedService.class);
-        intent.setAction(CarLedService.ACTION_START);
-        startForegroundService(intent);
-        Toast.makeText(this, "Service started", Toast.LENGTH_SHORT).show();
-        updateStatus();
+        if (CarLedService.isRunning()) {
+            intent.setAction(CarLedService.ACTION_STOP);
+            startService(intent);
+            Toast.makeText(this, "Service stopped", Toast.LENGTH_SHORT).show();
+        } else {
+            intent.setAction(CarLedService.ACTION_START);
+            startForegroundService(intent);
+            Toast.makeText(this, "Service started", Toast.LENGTH_SHORT).show();
+        }
+        // The service starts/stops asynchronously; re-check once it has settled.
+        handler.postDelayed(this::updateStatus, 500);
+    }
+
+    @Nullable
+    private String getSavedDeviceAddress() {
+        return getSharedPreferences("aimp_led", MODE_PRIVATE)
+            .getString(CarLedService.PREF_BLE_ADDR, null);
     }
 
     private void updateStatus() {
-        SharedPreferences prefs = getSharedPreferences("aimp_led", MODE_PRIVATE);
-        String addr = prefs.getString(CarLedService.PREF_BLE_ADDR, null);
+        String addr = getSavedDeviceAddress();
+        int dotAttr;
         if (addr == null) {
-            statusText.setText("BLE: not paired");
+            statusText.setText("Not paired — set up a controller below");
+            dotAttr = R.attr.statusOffColor;
         } else if (ZoneManager.getInstance(this).isBleConnected()) {
-            statusText.setText("BLE: ● Connected  " + addr);
+            statusText.setText("Connected");
+            dotAttr = R.attr.statusOkColor;
         } else {
-            statusText.setText("BLE: ○ Disconnected  " + addr);
+            statusText.setText(CarLedService.isRunning() ? "Connecting…" : "Disconnected");
+            dotAttr = R.attr.statusWarnColor;
         }
+        statusDot.getBackground().mutate().setTint(MaterialColors.getColor(statusDot, dotAttr));
+        startButton.setText(CarLedService.isRunning() ? "Stop" : "Start");
     }
 
     private void updateNotifPermissionState() {
@@ -387,5 +481,6 @@ public class MainActivity extends AppCompatActivity
             .edit().putString(CarLedService.PREF_BLE_ADDR, address).apply();
         Toast.makeText(this, "Device saved: " + address, Toast.LENGTH_SHORT).show();
         updateStatus();
+        setSetupExpanded(false);
     }
 }

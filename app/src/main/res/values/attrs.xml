@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- App-specific colours that differ between the normal and LED-night themes. -->
+    <attr name="bannerBackground" format="color" />
+    <attr name="bannerText"       format="color" />
+    <attr name="zoneTitleColor"   format="color" />
+    <attr name="statusOkColor"    format="color" />
+    <attr name="statusWarnColor"  format="color" />
+    <attr name="statusOffColor"   format="color" />
+</resources>

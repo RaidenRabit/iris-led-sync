@@ -11,6 +11,41 @@
         <item name="colorOnSecondary">@color/black</item>
         <!-- Status bar color. -->
         <item name="android:statusBarColor">?attr/colorPrimaryVariant</item>
-        <!-- Customize your theme here. -->
+        <!-- App colours -->
+        <item name="bannerBackground">#FFCDD2</item>
+        <item name="bannerText">#B71C1C</item>
+        <item name="zoneTitleColor">#FFFFFF</item>
+        <item name="statusOkColor">#4CAF50</item>
+        <item name="statusWarnColor">#FFA000</item>
+        <item name="statusOffColor">#9E9E9E</item>
+    </style>
+
+    <!--
+        Applied by MainActivity whenever the LED night mode is active, regardless of the
+        system dark-mode setting: true black, dim warm text and a muted rust accent so the
+        screen doesn't light up the cabin at night.
+    -->
+    <style name="Theme.AIMPplugin.LedNight" parent="Theme.MaterialComponents">
+        <item name="colorPrimary">@color/night_accent</item>
+        <item name="colorPrimaryVariant">@color/black</item>
+        <item name="colorOnPrimary">@color/black</item>
+        <item name="colorSecondary">@color/night_accent</item>
+        <item name="colorSecondaryVariant">@color/night_accent</item>
+        <item name="colorOnSecondary">@color/black</item>
+        <item name="colorSurface">@color/night_surface</item>
+        <item name="colorOnSurface">@color/night_text</item>
+        <item name="android:colorBackground">@color/black</item>
+        <item name="colorOnBackground">@color/night_text</item>
+        <item name="android:textColorPrimary">@color/night_text</item>
+        <item name="android:textColorSecondary">@color/night_text_dim</item>
+        <item name="android:statusBarColor">@color/black</item>
+        <item name="android:navigationBarColor">@color/black</item>
+        <!-- App colours -->
+        <item name="bannerBackground">#2A0D0D</item>
+        <item name="bannerText">#B0645A</item>
+        <item name="zoneTitleColor">@color/night_text</item>
+        <item name="statusOkColor">#4E7A3E</item>
+        <item name="statusWarnColor">#8A6A2A</item>
+        <item name="statusOffColor">#4A4440</item>
     </style>
 </resources>

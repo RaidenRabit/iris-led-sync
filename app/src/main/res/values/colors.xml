@@ -7,4 +7,9 @@
     <color name="teal_700">#FF018786</color>
     <color name="black">#FF000000</color>
     <color name="white">#FFFFFFFF</color>
+    <!-- LED night theme -->
+    <color name="night_accent">#FF9A4632</color>
+    <color name="night_surface">#FF0C0B0B</color>
+    <color name="night_text">#FF9A8A82</color>
+    <color name="night_text_dim">#FF6A5E58</color>
 </resources>

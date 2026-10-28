@@ -42,7 +42,13 @@ public class CarLedService extends Service implements ZoneManager.Listener {
 
     static final String PREF_BLE_ADDR = "ble_address";
 
-    private static final int BRIGHT_STEP = 26; // ~10%
+    private static final int BRIGHT_STEP       = 26; // ~6% of the 400% day range
+    private static final int BRIGHT_STEP_NIGHT = 10; // night is capped at 100%, so finer steps
+
+    private static volatile boolean running;
+
+    /** True while the service is in the foreground (between a successful start and onDestroy). */
+    static boolean isRunning() { return running; }
 
     private CarLedBleManager bleManager;
 
@@ -75,6 +81,7 @@ public class CarLedService extends Service implements ZoneManager.Listener {
 
         ZoneManager      zm  = ZoneManager.getInstance(this);
         DayNightManager  dnm = DayNightManager.getInstance(this);
+        int              step = dnm.isNightActive() ? BRIGHT_STEP_NIGHT : BRIGHT_STEP;
 
         switch (action) {
             case ACTION_STOP:
@@ -82,16 +89,16 @@ public class CarLedService extends Service implements ZoneManager.Listener {
                 return START_NOT_STICKY;
 
             case ACTION_Z1_DOWN:
-                zm.updateZone(zm.getZone(0).withBrightness(zm.getZone(0).brightness - BRIGHT_STEP));
+                zm.updateZone(zm.getZone(0).withBrightness(zm.getZone(0).brightness - step));
                 break;
             case ACTION_Z1_UP:
-                zm.updateZone(zm.getZone(0).withBrightness(zm.getZone(0).brightness + BRIGHT_STEP));
+                zm.updateZone(zm.getZone(0).withBrightness(zm.getZone(0).brightness + step));
                 break;
             case ACTION_Z2_DOWN:
-                zm.updateZone(zm.getZone(1).withBrightness(zm.getZone(1).brightness - BRIGHT_STEP));
+                zm.updateZone(zm.getZone(1).withBrightness(zm.getZone(1).brightness - step));
                 break;
             case ACTION_Z2_UP:
-                zm.updateZone(zm.getZone(1).withBrightness(zm.getZone(1).brightness + BRIGHT_STEP));
+                zm.updateZone(zm.getZone(1).withBrightness(zm.getZone(1).brightness + step));
                 break;
             case ACTION_ALL_OFF:
                 zm.updateZone(zm.getZone(0).withEnabled(false));
@@ -111,6 +118,7 @@ public class CarLedService extends Service implements ZoneManager.Listener {
             default: // ACTION_START or first-run
                 try {
                     startForeground(NOTIF_ID, buildNotification());
+                    running = true;
                 } catch (SecurityException e) {
                     // Bluetooth runtime permissions not yet granted (fresh install / boot before
                     // the user has opened the app). Stop gracefully — MainActivity will request
@@ -125,6 +133,8 @@ public class CarLedService extends Service implements ZoneManager.Listener {
                 else Log.w(TAG, "No BLE address — open app to scan");
                 if (AIMPMediaListener.getInstance() != null)
                     AIMPMediaListener.getInstance().attachLedService(this);
+                else
+                    AIMPMediaListener.ensureBound(this);
                 return START_STICKY;
         }
 
@@ -135,6 +145,7 @@ public class CarLedService extends Service implements ZoneManager.Listener {
     @Override
     public void onDestroy() {
         super.onDestroy();
+        running = false;
         unregisterReceiver(configReceiver);
         ZoneManager.getInstance(this).removeListener(this);
         if (bleManager != null) bleManager.disconnect();

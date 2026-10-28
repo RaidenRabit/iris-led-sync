@@ -11,6 +11,12 @@
         <item name="colorOnSecondary">@color/black</item>
         <!-- Status bar color. -->
         <item name="android:statusBarColor">?attr/colorPrimaryVariant</item>
-        <!-- Customize your theme here. -->
+        <!-- App colours -->
+        <item name="bannerBackground">#4A1C1C</item>
+        <item name="bannerText">#FFCDD2</item>
+        <item name="zoneTitleColor">#FFFFFF</item>
+        <item name="statusOkColor">#66BB6A</item>
+        <item name="statusWarnColor">#FFB300</item>
+        <item name="statusOffColor">#9E9E9E</item>
     </style>
 </resources>

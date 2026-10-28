@@ -5,6 +5,7 @@ import android.content.ComponentName;
 import android.content.Context;
 import android.content.Intent;
 import android.content.IntentFilter;
+import android.content.pm.PackageManager;
 import android.graphics.Bitmap;
 import android.graphics.Color;
 import android.media.MediaMetadata;
@@ -56,9 +57,45 @@ public class AIMPMediaListener extends NotificationListenerService {
     private String lastTitle = null;
     private boolean artRetryScheduled = false;
 
+    private static volatile boolean connected = false;
+    private static final Handler staticHandler = new Handler(Looper.getMainLooper());
+    private static final long REBIND_VERIFY_MS = 3000;
+
+    /** Access can stay granted while the system silently drops the binding (APK update, MIUI kills). */
+    static void ensureBound(Context ctx) {
+        if (connected && instance != null) {
+            instance.resyncSession();
+            return;
+        }
+        Context app = ctx.getApplicationContext();
+        ComponentName cn = new ComponentName(app, AIMPMediaListener.class);
+        Log.i(TAG, "Listener not connected — requesting rebind");
+        requestRebind(cn);
+        staticHandler.postDelayed(() -> {
+            if (connected) return;
+            Log.w(TAG, "requestRebind didn't take — toggling listener component to force a rebind");
+            PackageManager pm = app.getPackageManager();
+            pm.setComponentEnabledSetting(cn,
+                PackageManager.COMPONENT_ENABLED_STATE_DISABLED, PackageManager.DONT_KILL_APP);
+            pm.setComponentEnabledSetting(cn,
+                PackageManager.COMPONENT_ENABLED_STATE_ENABLED, PackageManager.DONT_KILL_APP);
+        }, REBIND_VERIFY_MS);
+    }
+
+    private void resyncSession() {
+        if (currentController != null) {
+            currentController.unregisterCallback(sessionCallback);
+            currentController = null;
+        }
+        lastGenerationId = -1;
+        lastTitle = null;
+        checkAIMPSession();
+    }
+
     public void attachLedService(CarLedService svc) {
         ledService = svc;
-        // Apply colors for the currently playing track immediately
+        lastGenerationId = -1;
+        lastTitle = null;
         if (currentController != null) processMetadata(currentController.getMetadata());
     }
 
@@ -79,19 +116,34 @@ public class AIMPMediaListener extends NotificationListenerService {
         f.addAction("com.aimp.service.action.play_pause");
         f.addAction("com.aimp.service.action.stop");
         registerReceiver(aimpBroadcastReceiver, f, Context.RECEIVER_EXPORTED);
-
-        startMonitoring();
     }
 
     @Override
     public void onDestroy() {
         super.onDestroy();
         unregisterReceiver(aimpBroadcastReceiver);
-        if (currentController != null) {
-            currentController.unregisterCallback(sessionCallback);
-            currentController = null;
-        }
-        instance = null;
+        stopMonitoring();
+        connected = false;
+        if (instance == this) instance = null;
+    }
+
+    @Override
+    public void onListenerConnected() {
+        super.onListenerConnected();
+        Log.i(TAG, "Listener connected");
+        connected = true;
+        stopMonitoring();
+        startMonitoring();
+        ensureLedServiceRunning();
+    }
+
+    @Override
+    public void onListenerDisconnected() {
+        super.onListenerDisconnected();
+        Log.w(TAG, "Listener disconnected — requesting rebind");
+        connected = false;
+        stopMonitoring();
+        requestRebind(new ComponentName(this, AIMPMediaListener.class));
     }
 
     // -------------------------------------------------------------------------
@@ -125,18 +177,29 @@ public class AIMPMediaListener extends NotificationListenerService {
         if (ledService == null) AutoStartReceiver.startLedService(this);
     }
 
+    private final MediaSessionManager.OnActiveSessionsChangedListener sessionsListener =
+        controllers -> {
+            Log.d(TAG, "Active sessions changed");
+            checkAIMPSession();
+        };
+
     private void startMonitoring() {
         if (mediaSessionManager == null) return;
         ComponentName self = new ComponentName(this, AIMPMediaListener.class);
         try {
-            mediaSessionManager.addOnActiveSessionsChangedListener(
-                controllers -> {
-                    Log.d(TAG, "Active sessions changed");
-                    checkAIMPSession();
-                }, self);
+            mediaSessionManager.addOnActiveSessionsChangedListener(sessionsListener, self, mainHandler);
             checkAIMPSession();
         } catch (SecurityException e) {
             Log.w(TAG, "No notification access: " + e.getMessage());
+        }
+    }
+
+    private void stopMonitoring() {
+        if (mediaSessionManager != null)
+            mediaSessionManager.removeOnActiveSessionsChangedListener(sessionsListener);
+        if (currentController != null) {
+            currentController.unregisterCallback(sessionCallback);
+            currentController = null;
         }
     }
 

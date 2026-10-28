@@ -19,6 +19,10 @@ import java.util.Map;
  * The single transformColor() path is shared between both modes — only the loaded
  * values differ (brightness/saturation defaults and the saved color).
  *
+ * A per-mode master dimmer (0-100%) scales every zone's brightness on output, so the
+ * whole cabin can be dimmed in one go without losing the balance between zones.
+ * Night caps zone brightness at 100% (no amplification) and starts dimmer.
+ *
  * Migration: legacy "zone_i_*" keys are treated as day settings when no day-specific
  * keys have been written yet.
  */
@@ -30,6 +34,19 @@ public final class ZoneManager implements DayNightManager.Listener {
 
     private static final int LERP_STEPS    = 30;
     private static final int LERP_INTERVAL = 33; // ms
+
+    // Live preview while a control is being dragged — rate-limited so the BLE queue keeps up
+    private static final int PREVIEW_INTERVAL = 66; // ms
+
+    private static final int MAX_BRIGHTNESS_DAY       = 400;
+    private static final int MAX_BRIGHTNESS_NIGHT     = 100;
+    private static final int DEFAULT_BRIGHTNESS_DAY   = 100;
+    private static final int DEFAULT_BRIGHTNESS_NIGHT = 25;
+
+    public static int maxBrightness(boolean isNight)     { return isNight ? MAX_BRIGHTNESS_NIGHT : MAX_BRIGHTNESS_DAY; }
+    public static int defaultBrightness(boolean isNight) { return isNight ? DEFAULT_BRIGHTNESS_NIGHT : DEFAULT_BRIGHTNESS_DAY; }
+    // 250% boosts muted Palette colors to vivid; 150% is softer for night.
+    public static int defaultSaturation(boolean isNight) { return isNight ? 150 : 250; }
 
     // ---- singleton -----------------------------------------------------------
 
@@ -53,12 +70,15 @@ public final class ZoneManager implements DayNightManager.Listener {
     private final int[] lerpFrom        = new int[ZONE_COUNT];
     private Map<ColorMode, Integer> lastAlbumColors;
     private final int[] effectiveColors = new int[ZONE_COUNT];
+    private int master; // 0-100, per mode
 
     private final List<Listener>      listeners      = new ArrayList<>();
     private final List<ColorListener> colorListeners = new ArrayList<>();
     private volatile CarLedBleManager bleManager;
     private final Handler mainHandler = new Handler(Looper.getMainLooper());
     private Runnable lerpRunnable;
+    private boolean  previewScheduled;
+    private final Runnable previewDispatch = () -> { previewScheduled = false; dispatchBle(); };
 
     // ---- construction --------------------------------------------------------
 
@@ -71,6 +91,7 @@ public final class ZoneManager implements DayNightManager.Listener {
             zones[i]    = load(isNight, i);
             lerpFrom[i] = zones[i].color;
         }
+        master = loadMaster(isNight);
         dispatchBle();
         Log.i(TAG, "Loaded " + ZONE_COUNT + " zones (night=" + isNight + ")");
     }
@@ -83,10 +104,12 @@ public final class ZoneManager implements DayNightManager.Listener {
             mainHandler.removeCallbacks(lerpRunnable);
             lerpRunnable = null;
         }
+        cancelPreview();
         for (int i = 0; i < ZONE_COUNT; i++) {
             zones[i]    = load(isNight, i);
             lerpFrom[i] = zones[i].color;
         }
+        master = loadMaster(isNight);
         dispatchBle();
         if (lastAlbumColors != null) reapplyAlbumColors();
         notifyListeners();
@@ -113,12 +136,53 @@ public final class ZoneManager implements DayNightManager.Listener {
     public LedZone getZone(int index) { return zones[index]; }
 
     public void updateZone(LedZone zone) {
+        cancelPreview();
+        zone = capBrightness(zone);
         zones[zone.index] = zone;
         lerpFrom[zone.index] = zone.color;
         save(zone);
         dispatchBle();
         notifyListeners();
     }
+
+    /** Apply a zone change to the LEDs right away (throttled) without saving it — used while dragging. */
+    public void previewZone(LedZone zone) {
+        zones[zone.index] = capBrightness(zone);
+        schedulePreview();
+    }
+
+    public int getMaster() { return master; }
+
+    public void setMaster(int pct) {
+        cancelPreview();
+        master = clampMaster(pct);
+        prefs.edit().putInt(masterKey(dayNightManager.isNightActive()), master).apply();
+        dispatchBle();
+        notifyListeners();
+    }
+
+    public void previewMaster(int pct) {
+        master = clampMaster(pct);
+        schedulePreview();
+    }
+
+    private void schedulePreview() {
+        if (previewScheduled) return;
+        previewScheduled = true;
+        mainHandler.postDelayed(previewDispatch, PREVIEW_INTERVAL);
+    }
+
+    private void cancelPreview() {
+        mainHandler.removeCallbacks(previewDispatch);
+        previewScheduled = false;
+    }
+
+    private LedZone capBrightness(LedZone z) {
+        int max = maxBrightness(dayNightManager.isNightActive());
+        return z.brightness > max ? z.withBrightness(max) : z;
+    }
+
+    private static int clampMaster(int pct) { return Math.max(0, Math.min(100, pct)); }
 
     public void reapplyAlbumColors() {
         if (lastAlbumColors != null) onAlbumColors(lastAlbumColors);
@@ -214,19 +278,16 @@ public final class ZoneManager implements DayNightManager.Listener {
         LedZone z0    = zones[0], z1 = zones[1];
         boolean anyOn = z0.enabled || z1.enabled;
 
-        // Preview shows hue+saturation effect only — brightness=100 means 1× (natural) in the formula.
-        int d0 = z0.enabled ? CarLedProtocol.transformColor(z0.color, z0.hueOffset, z0.saturation, 100) : Color.BLACK;
-        int d1 = z1.enabled ? CarLedProtocol.transformColor(z1.color, z1.hueOffset, z1.saturation, 100) : Color.BLACK;
-        effectiveColors[0] = z0.enabled ? d0 : Color.BLACK;
-        effectiveColors[1] = z1.enabled ? d1 : Color.BLACK;
+        // Full transform including brightness and the master dimmer — the preview shows
+        // exactly what the LEDs output, so it dims along with them at night.
+        int c0 = outputColor(z0);
+        int c1 = outputColor(z1);
+        effectiveColors[0] = c0;
+        effectiveColors[1] = c1;
         notifyColorListeners();
 
         CarLedBleManager ble = bleManager;
         if (ble == null || !ble.isReady()) return;
-
-        // BLE output applies the full transform including brightness amplification.
-        int c0 = z0.enabled ? CarLedProtocol.transformColor(z0.color, z0.hueOffset, z0.saturation, z0.brightness) : Color.BLACK;
-        int c1 = z1.enabled ? CarLedProtocol.transformColor(z1.color, z1.hueOffset, z1.saturation, z1.brightness) : Color.BLACK;
 
         ble.enqueuePacket(CarLedProtocol.buildColorPacket(
             Color.red(c0), Color.green(c0), Color.blue(c0),
@@ -235,17 +296,25 @@ public final class ZoneManager implements DayNightManager.Listener {
         ble.enqueuePacket(CarLedProtocol.buildBrightnessPacket(anyOn, 0xFF, 0xFF));
     }
 
+    private int outputColor(LedZone z) {
+        if (!z.enabled) return Color.BLACK;
+        int brightness = Math.round(z.brightness * master / 100f);
+        return CarLedProtocol.transformColor(z.color, z.hueOffset, z.saturation, brightness);
+    }
+
     // ---- persistence ---------------------------------------------------------
+
+    private static String masterKey(boolean isNight) { return "master_" + (isNight ? "night" : "day"); }
+
+    private int loadMaster(boolean isNight) { return prefs.getInt(masterKey(isNight), 100); }
 
     private LedZone load(boolean isNight, int i) {
         String mp       = "zone_" + i + "_" + (isNight ? "night" : "day") + "_";
         String lp       = "zone_" + i + "_"; // legacy keys (migration fallback for day)
         boolean useLegacy = !isNight;         // night has its own defaults; day falls back to legacy
 
-        // Brightness: 300% = 3× amplification (vivid for day); 100% = natural (calm for night).
-        // Saturation: 250% boosts muted Palette colors to vivid; 150% is softer for night.
-        int defaultBrightness = 100; // same natural starting point for both modes
-        int defaultSaturation = isNight ? 150 : 250;
+        int defaultBrightness = defaultBrightness(isNight);
+        int defaultSaturation = defaultSaturation(isNight);
 
         // Night mode first use: inherit the saved day color so hue/sat sliders work immediately.
         // Without this, night defaults to white and all transforms become no-ops (HSV S=0).
@@ -265,7 +334,8 @@ public final class ZoneManager implements DayNightManager.Listener {
             i,
             getStr( mp, lp, useLegacy, "name",        i == 0 ? "Zone 1" : "Zone 2"),
             getBool(mp, lp, useLegacy, "enabled",      true),
-            getInt( mp, lp, useLegacy, "brightness",   defaultBrightness),
+            Math.min(maxBrightness(isNight),
+                getInt(mp, lp, useLegacy, "brightness", defaultBrightness)),
             getBool(mp, lp, useLegacy, "auto_color",   true),
             mode,
             getInt( mp, lp, useLegacy, "color",        colorDefault),
